@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var viewModel: AgentViewModel
@@ -28,7 +30,7 @@ struct SettingsView: View {
                 } else if providerString == AIProvider.nativeGGUF.rawValue {
                     HStack {
                         TextField("GGUF Model Path", text: $ggufPath)
-                        Button("Browse") { /* Open panel logic */ }
+                        Button("Browse") { browseForGGUFModel() }
                     }
                 }
             }
@@ -48,6 +50,19 @@ struct SettingsView: View {
         .frame(width: 400, height: 300)
     }
     
+    private func browseForGGUFModel() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        if let ggufType = UTType(filenameExtension: "gguf") {
+            panel.allowedContentTypes = [ggufType]
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            ggufPath = url.path
+        }
+    }
+
     private func configureEngine() {
         let engine: AIAgentEngine
         switch providerString {
@@ -58,9 +73,17 @@ struct SettingsView: View {
         case AIProvider.lmStudio.rawValue:
             engine = LocalServerEngine(provider: .lmStudio, baseURL: lmStudioURL)
         case AIProvider.nativeGGUF.rawValue:
-            engine = NativeGGUFEngine()
-            if let path = URL(string: ggufPath) {
-                Task { try await engine.loadModel(path) }
+            let nativeEngine = NativeGGUFEngine()
+            engine = nativeEngine
+            if !ggufPath.isEmpty {
+                let path = URL(fileURLWithPath: ggufPath)
+                Task {
+                    do {
+                        try await nativeEngine.loadModel(path: path)
+                    } catch {
+                        viewModel.status = "Failed to load GGUF model: \(error.localizedDescription)"
+                    }
+                }
             }
         default:
             engine = CloudEngine(apiKey: apiKey)

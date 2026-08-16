@@ -1,8 +1,13 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 @MainActor
 final class AgentViewModel: ObservableObject {
+    /// Shared instance so the menu-bar UI and the system Services handler
+    /// (which cannot receive a SwiftUI-injected instance) observe the same state.
+    static let shared = AgentViewModel()
+
     @Published var status = "Ready"
     @Published var streamingOutput = ""
     @Published var currentStep: PipelineStep = .analyzing
@@ -25,7 +30,7 @@ final class AgentViewModel: ObservableObject {
         
         cancellable = Task {
             do {
-                for await token in try await pipeline.execute(selectedCode: text) {
+                for try await token in pipeline.execute(selectedCode: text) {
                     currentStep = .complete
                     streamingOutput += token
                     status = "Processing: \(token)"
@@ -46,7 +51,7 @@ final class AgentViewModel: ObservableObject {
         pasteboard.setString(streamingOutput, forType: .string)
         
         NSWorkspace.shared.frontmostApplication?.activate()
-        NSApp.sendAction(#selector(NSApplication.paste(_:)), to: nil, from: nil)
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
         
         status = "Applied to editor"
     }
