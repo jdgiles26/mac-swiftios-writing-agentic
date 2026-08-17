@@ -14,20 +14,18 @@ enum AIProvider: String, Codable, CaseIterable {
 }
 
 /// Streams Server-Sent-Events chat-completion responses shaped like the
-/// OpenAI-compatible `/v1/chat/completions` endpoint, shared by every
-/// HTTP-backed engine so each engine only needs to build its own request.
-private func streamChatCompletion(request: URLRequest) -> AsyncThrowingStream<String, Error> {
+/// OpenAI-compatible `/v1/chat/completions` endpoint. Shared by every
+/// HTTP-backed engine (cloud, local server, and the local llama-server
+/// process behind `NativeGGUFEngine`) so each engine only needs to build its
+/// own request.
+func streamChatCompletion(request: URLRequest) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream { continuation in
         let task = Task {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                    throw NSError(
-                        domain: "AIEngine",
-                        code: http.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "Request failed with status \(http.statusCode)"]
-                    )
+                    throw CodeAgentError.requestFailed(statusCode: http.statusCode)
                 }
 
                 for try await line in bytes.lines {
@@ -54,7 +52,7 @@ private func streamChatCompletion(request: URLRequest) -> AsyncThrowingStream<St
     }
 }
 
-private func chatCompletionBody(model: String, prompt: String, context: String) throws -> Data {
+func chatCompletionBody(model: String, prompt: String, context: String) throws -> Data {
     let body: [String: Any] = [
         "model": model,
         "messages": [
@@ -75,7 +73,7 @@ final class CloudEngine: AIAgentEngine {
 
     func generateResponse(prompt: String, context: String) async throws -> AsyncThrowingStream<String, Error> {
         guard !apiKey.isEmpty else {
-            throw NSError(domain: "AIEngine", code: -1, userInfo: [NSLocalizedDescriptionKey: "No OpenAI API key configured."])
+            throw CodeAgentError.missingAPIKey(provider: provider)
         }
 
         var request = URLRequest(url: URL(string: baseURL)!)
@@ -101,7 +99,7 @@ final class LocalServerEngine: AIAgentEngine {
 
     func generateResponse(prompt: String, context: String) async throws -> AsyncThrowingStream<String, Error> {
         guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
-            throw NSError(domain: "AIEngine", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server URL: \(baseURL)"])
+            throw CodeAgentError.invalidServerURL(baseURL)
         }
 
         var request = URLRequest(url: url)
@@ -117,33 +115,4 @@ final class LocalServerEngine: AIAgentEngine {
     }
 
     func loadModel(path: URL?) async throws { /* N/A: server manages its own model */ }
-}
-
-/// Placeholder for on-device inference via a bundled `llama.cpp`/`mlx-swift`
-/// backend. No such backend is vendored in this package yet, so this engine
-/// validates and stores the model path but reports a clear error when asked
-/// to generate — wiring in a real native runtime is left as an extension
-/// point (see README "Native GGUF/MLX Engine" section).
-final class NativeGGUFEngine: AIAgentEngine {
-    let provider = AIProvider.nativeGGUF
-    private var modelPath: URL?
-
-    func generateResponse(prompt: String, context: String) async throws -> AsyncThrowingStream<String, Error> {
-        guard modelPath != nil else {
-            throw NSError(domain: "GGUF", code: -1, userInfo: [NSLocalizedDescriptionKey: "No model loaded"])
-        }
-
-        throw NSError(
-            domain: "GGUF",
-            code: -3,
-            userInfo: [NSLocalizedDescriptionKey: "Native GGUF/MLX inference is not implemented in this build. Link a llama.cpp or mlx-swift backend to enable it."]
-        )
-    }
-
-    func loadModel(path: URL?) async throws {
-        guard let path = path, FileManager.default.fileExists(atPath: path.path) else {
-            throw NSError(domain: "GGUF", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid GGUF path"])
-        }
-        self.modelPath = path
-    }
 }
