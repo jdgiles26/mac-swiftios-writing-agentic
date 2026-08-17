@@ -4,7 +4,7 @@ import AppKit
 @main
 struct CodeAgentApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var viewModel = AgentViewModel()
+    @StateObject private var viewModel = AgentViewModel.shared
     
     var body: some Scene {
         MenuBarExtra("CodeAgent", systemImage: "sparkles") {
@@ -25,7 +25,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct MenuBarContent: View {
     @ObservedObject var viewModel: AgentViewModel
-    
+    @Environment(\.openSettings) private var openSettings
+
     var body: some View {
         VStack(spacing: 12) {
             Text(viewModel.status)
@@ -49,7 +50,7 @@ struct MenuBarContent: View {
             .buttonStyle(.borderedProminent)
             
             Button("Open Settings") {
-                NSApp.sendAction(#selector(NSDocumentController.showSettingsPanel(_:)), to: nil, from: nil)
+                openSettings()
             }
         }
         .padding()
