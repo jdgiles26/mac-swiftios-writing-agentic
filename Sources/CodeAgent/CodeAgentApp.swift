@@ -29,10 +29,14 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if viewModel.isRunning {
+                StepProgressView(currentStep: viewModel.currentStep)
+            }
+
             Text(viewModel.status)
                 .font(.caption)
                 .foregroundColor(.secondary)
-            
+
             if !viewModel.streamingOutput.isEmpty {
                 ScrollView {
                     Text(viewModel.streamingOutput)
@@ -43,17 +47,59 @@ struct MenuBarContent: View {
                 .background(Color(NSColor.textBackgroundColor))
                 .cornerRadius(8)
             }
-            
-            Button("Apply to Code") {
-                viewModel.applyResult()
+
+            if viewModel.isRunning {
+                Button("Cancel", role: .destructive) {
+                    viewModel.cancel()
+                }
+            } else {
+                Button("Apply to Code") {
+                    viewModel.applyResult()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.streamingOutput.isEmpty)
             }
-            .buttonStyle(.borderedProminent)
-            
+
             Button("Open Settings") {
                 openSettings()
             }
         }
         .padding()
         .frame(width: 300)
+    }
+}
+
+/// Shows the Analyze → Plan → Execute workflow with the currently active
+/// step highlighted, reflecting the real `PipelineEvent.stepStarted` events
+/// emitted by `AgenticPipeline` rather than a generic spinner.
+struct StepProgressView: View {
+    let currentStep: PipelineStep
+
+    private let steps: [PipelineStep] = [.analyzing, .planning, .executing]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(steps, id: \.self) { step in
+                Circle()
+                    .fill(color(for: step))
+                    .frame(width: 8, height: 8)
+                if step != steps.last {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.3))
+                        .frame(height: 1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func color(for step: PipelineStep) -> Color {
+        guard let currentIndex = steps.firstIndex(of: currentStep),
+              let stepIndex = steps.firstIndex(of: step) else {
+            return .secondary
+        }
+        if stepIndex < currentIndex { return .green }
+        if stepIndex == currentIndex { return .accentColor }
+        return Color.secondary.opacity(0.3)
     }
 }
